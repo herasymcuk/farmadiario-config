@@ -1,0 +1,41 @@
+{
+  "config_version": 1,
+  "last_updated": "2026-11-23T12:00:00Z",
+  "app_update": {
+    "latest_version_code": 50,
+    "latest_version_name": "4.0.0",
+    "mandatory": false,
+    "changelog": "Nuove terapie a scalare e al bisogno, QR Code terapia, Health Connect, tessera ICE e APK ottimizzato.",
+    "download_url": ""
+  },
+  "recalled_lots": [
+    {
+      "minsan": "024840014",
+      "drug_name": "CARDIOASPIRIN 100MG 30CPR",
+      "lot_number": "DEMO999",
+      "reason": "Lotto di test per verifica blocco ritiro AIFA",
+      "date": "2026-11-23"
+    }
+  ],
+  "critical_interactions": [
+    {
+      "ingredient_a": "ACIDO ACETILSALICILICO",
+      "ingredient_b": "IBUPROFENE",
+      "severity": "ALTA",
+      "message": "Possibile aumento del rischio gastrointestinale e riduzione dell'effetto antiaggregante. Chiedere al medico o farmacista."
+    },
+    {
+      "ingredient_a": "WARFARIN",
+      "ingredient_b": "KETOPROFENE",
+      "severity": "CRITICA",
+      "message": "Elevato rischio emorragico tra anticoagulante orale e FANS. Non associare senza controllo medico."
+    }
+  ],
+  "search_sources": [
+    { "name": "AIFA", "enabled": true, "priority": 1, "base_url": "https://medicinali.aifa.gov.it" },
+    { "name": "eFarma", "enabled": true, "priority": 2, "base_url": "https://www.efarma.com" },
+    { "name": "DrMax", "enabled": true, "priority": 3, "base_url": "https://www.drmax.it" },
+    { "name": "Redcare", "enabled": true, "priority": 4, "base_url": "https://www.redcare.it" },
+    { "name": "Tuttofarma", "enabled": true, "priority": 5, "base_url": "https://www.tuttofarma.it" }
+  ]
+}
