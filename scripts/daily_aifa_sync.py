@@ -35,9 +35,11 @@ RECALL_EXCLUDE = (
     "archivio ritiri", "normativa", "modulistica"
 )
 
+
 def clean_text(s):
     txt = re.sub(r"\s+", " ", (s or "")).strip()
     return re.sub(r"\s+:", ":", txt)
+
 
 def fetch_bytes(url, timeout=40, polite_delay=1.2):
     if polite_delay > 0:
@@ -58,6 +60,7 @@ def fetch_bytes(url, timeout=40, polite_delay=1.2):
         raise RuntimeError(f"curl_{proc.returncode}: {err[:60]}")
     return proc.stdout
 
+
 def decode_text(raw):
     for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
         try:
@@ -66,13 +69,16 @@ def decode_text(raw):
             continue
     return raw.decode("utf-8", errors="ignore")
 
+
 def fetch_text(url, timeout=40, polite_delay=1.2):
     return decode_text(fetch_bytes(url, timeout=timeout, polite_delay=polite_delay))
+
 
 def extract_anchors(page_html, base_url):
     anchors = []
     seen = set()
-    for m in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', page_html, flags=re.IGNORECASE | re.DOTALL):
+    pattern = r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>'
+    for m in re.finditer(pattern, page_html, flags=re.IGNORECASE | re.DOTALL):
         href = html.unescape(m.group(1)).strip()
         if not href or href.startswith(("#", "javascript:", "mailto:")):
             continue
@@ -84,6 +90,7 @@ def extract_anchors(page_html, base_url):
             anchors.append((full_url, text))
     return anchors
 
+
 def find_data_files(anchors):
     files = []
     for url, text in anchors:
@@ -94,6 +101,7 @@ def find_data_files(anchors):
         if (is_csv or is_zip) and url not in files:
             files.append(url)
     return files
+
 
 def extract_csv_texts_from_url(url):
     raw = fetch_bytes(url, timeout=45)
@@ -111,8 +119,10 @@ def extract_csv_texts_from_url(url):
         return []
     return [(url.split("/")[-1].split("?")[0], text)]
 
+
 def norm_header(h):
     return re.sub(r"\s+", " ", (h or "").replace(".", "").strip().upper())
+
 
 def parse_aifa_csv(csv_text):
     lines = [ln for ln in csv_text.splitlines() if ln.strip()]
@@ -152,6 +162,7 @@ def parse_aifa_csv(csv_text):
             rows.append(clean_row)
     return rows, header_preview
 
+
 def parse_price(val):
     if not val:
         return None
@@ -169,6 +180,7 @@ def parse_price(val):
     except ValueError:
         return None
 
+
 def sanitize_prices(price_map):
     """Garantisce che pr (prezzo di riferimento) sia sempre <= p (prezzo al pubblico)."""
     cleaned = {}
@@ -184,17 +196,18 @@ def sanitize_prices(price_map):
         cleaned[aic] = {"p": p, "pr": pr, "cl": item.get("cl", "A")}
     return cleaned
 
+
 def extract_aic(row):
+    bad_cols = ("DATA", "INIZIO", "FINE", "SCADENZ", "TITOLARE", "DITTA", "RAGIONE")
     for k, v in row.items():
-        if ("AIC" in k or "MINSAN" in k) and not any(
-            bad in k for bad in ("DATA", "INIZIO", "FINE", "SCADENZ", "TITOLARE", "DITTA", "RAGIONE")
-        ):
+        if ("AIC" in k or "MINSAN" in k) and not any(bad in k for bad in bad_cols):
             if "/" in v or "-" in v:
                 continue
             digits = re.sub(r"\D", "", v)
             if 6 <= len(digits) <= 9:
                 return digits.zfill(9)
     return ""
+
 
 def parse_date_iso(raw_date):
     raw_date = clean_text(raw_date)
@@ -209,9 +222,10 @@ def parse_date_iso(raw_date):
     except Exception:
         return ""
 
+
 def is_valid_recall_title(title, date_iso=""):
     t = clean_text(title)
-    tl = t.lower().replace("’", "'")
+    tl = t.lower().replace("\u2019", "'")
     if len(t) < 22 or len(t) > 240:
         return False
     if any(bad in tl for bad in RECALL_EXCLUDE):
@@ -222,12 +236,15 @@ def is_valid_recall_title(title, date_iso=""):
             return False
     return any(phrase in tl for phrase in RECALL_PHRASES)
 
+
 def format_notice(title, date_iso=""):
     t = clean_text(html.unescape(title))
-    t = re.sub(r"\s*[-–|]\s*(AIFA|Agenzia Italiana del Farmaco|aifa\.gov\.it).*\$", "", t, flags=re.IGNORECASE).strip()
+    suffix = r"\s*[-\u2013|]\s*(AIFA|Agenzia Italiana del Farmaco|aifa\.gov\.it).*$"
+    t = re.sub(suffix, "", t, flags=re.IGNORECASE).strip()
     if date_iso:
         return f"[{date_iso}] {t}"[:180]
     return t[:180]
+
 
 def parse_rss_items(xml_text):
     items = []
@@ -251,9 +268,10 @@ def parse_rss_items(xml_text):
                 items.append((parse_date_iso(pub), clean_text(html.unescape(title))))
     return items
 
+
 def fetch_aifa_recalls():
     """Raccoglie solo avvisi clinici reali di ritiro/divieto AIFA degli ultimi 18 mesi."""
-    found = []  # lista di tuple (date_iso, formatted_text)
+    found = []
     seen_keys = set()
 
     def add_notice(date_iso, title):
@@ -273,18 +291,20 @@ def fetch_aifa_recalls():
         "https://www.aifa.gov.it/difetti-di-qualita",
         "https://www.aifa.gov.it/news",
     )
+    rss_link_re = r'<link[^>]+type=["\']application/rss\+xml["\'][^>]+href=["\']([^"\']+)["\']'
     for page_url in aifa_pages:
         try:
             p_html = fetch_text(page_url, timeout=25, polite_delay=1.0)
-            for m in re.finditer(r'<link[^>]+type=["\']application/rss\+xml["\'][^>]+href=["\']([^"\']+)["\']', p_html, flags=re.IGNORECASE):
+            for m in re.finditer(rss_link_re, p_html, flags=re.IGNORECASE):
                 r_url = urljoin(page_url, html.unescape(m.group(1)).strip())
                 if r_url not in rss_urls:
                     rss_urls.append(r_url)
             for u, t in extract_anchors(p_html, page_url):
-                if ("rss" in u.lower() or "feed" in u.lower()) and "aifa.gov.it" in u.lower():
+                u_low = u.lower()
+                if ("rss" in u_low or "feed" in u_low) and "aifa.gov.it" in u_low:
                     if u not in rss_urls:
                         rss_urls.append(u)
-                elif "/w/" in u.lower() or "/-/" in u.lower():
+                elif "/w/" in u_low or "/-/" in u_low:
                     add_notice("", t)
         except Exception:
             continue
@@ -292,4 +312,248 @@ def fetch_aifa_recalls():
     for r_url in rss_urls[:5]:
         try:
             xml_txt = fetch_text(r_url, timeout=25, polite_delay=1.0)
-            for d_iso,
+            for d_iso, title in parse_rss_items(xml_txt):
+                add_notice(d_iso, title)
+        except Exception:
+            continue
+
+    if found:
+        found.sort(key=lambda x: x[0], reverse=True)
+        return [txt for _, txt in found[:40]], "AIFA diretto"
+
+    # Strategia 2: Sitemap ufficiale AIFA
+    try:
+        sm_xml = fetch_text("https://www.aifa.gov.it/sitemap.xml", timeout=30, polite_delay=1.0)
+        child_maps = re.findall(r"<loc>\s*(https?://[^<]+sitemap[^<]*)\s*</loc>", sm_xml, flags=re.IGNORECASE)
+        xml_sources = [sm_xml]
+        for cm in child_maps[:3]:
+            try:
+                xml_sources.append(fetch_text(html.unescape(cm), timeout=25, polite_delay=1.0))
+            except Exception:
+                continue
+
+        for src in xml_sources:
+            for block in re.findall(r"<url>(.*?)</url>", src, flags=re.IGNORECASE | re.DOTALL):
+                loc_m = re.search(r"<loc>\s*([^<]+)\s*</loc>", block, flags=re.IGNORECASE)
+                if not loc_m:
+                    continue
+                loc = html.unescape(loc_m.group(1)).strip()
+                loc_low = loc.lower()
+                if not any(kw in loc_low for kw in RECALL_URL_HINTS):
+                    continue
+                if "/w/" not in loc_low and "/-/" not in loc_low:
+                    continue
+                lm_m = re.search(r"<lastmod>\s*([^<]+)\s*</lastmod>", block, flags=re.IGNORECASE)
+                d_iso = parse_date_iso(lm_m.group(1)) if lm_m else ""
+                slug = unquote(loc.rstrip("/").split("/")[-1]).replace("-", " ").strip()
+                if slug:
+                    add_notice(d_iso, slug[0].upper() + slug[1:])
+        if found:
+            found.sort(key=lambda x: x[0], reverse=True)
+            return [txt for _, txt in found[:40]], "AIFA sitemap"
+    except Exception:
+        pass
+
+    # Strategia 3: Feed RSS indicizzato filtrato su site:aifa.gov.it (ultimi 18 mesi)
+    try:
+        since_date = (datetime.now(timezone.utc) - timedelta(days=540)).strftime("%Y-%m-%d")
+        query = (
+            "site:aifa.gov.it+"
+            "(%22divieto+di+utilizzo%22+OR+%22ritiro+lotti%22+OR+"
+            "%22ritiro+cautelativo%22+OR+%22ritiro+dal+commercio%22+OR+"
+            "%22ritiro+dal+mercato%22+OR+%22difetto+di+qualit%C3%A0%22)"
+            f"+after:{since_date}"
+        )
+        rss_url = f"https://news.google.com/rss/search?q={query}&hl=it&gl=IT&ceid=IT:it"
+        xml_txt = fetch_text(rss_url, timeout=25, polite_delay=0.5)
+        for d_iso, title in parse_rss_items(xml_txt):
+            add_notice(d_iso, title)
+        if found:
+            found.sort(key=lambda x: x[0], reverse=True)
+            return [txt for _, txt in found[:40]], "AIFA RSS"
+    except Exception:
+        pass
+
+    return [], ""
+
+
+def load_json(path, default):
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return default
+
+
+def sync():
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    config = load_json(REMOTE_CONFIG_PATH, {
+        "config_version": 1,
+        "last_updated": now_iso,
+        "recalled_lots": [],
+        "critical_interactions": [],
+        "search_sources": []
+    })
+    prev_delta = load_json(DELTA_UPDATES_PATH, {})
+    delta = {
+        "schema_version": 1,
+        "last_updated": now_iso,
+        "source_status": {},
+        "price_updates": sanitize_prices(prev_delta.get("price_updates", {})),
+        "shortages": prev_delta.get("shortages", []),
+        "revocations_notices": prev_delta.get("revocations_notices", [])
+    }
+
+    # 1. PREZZI UFFICIALI AIFA (Liste di Trasparenza + Classe A e H)
+    try:
+        index_pages = [
+            "https://www.aifa.gov.it/liste-di-trasparenza",
+            "https://www.aifa.gov.it/elenchi-di-farmaci-di-classe-a-e-h"
+        ]
+        file_candidates = []
+        subpage_candidates = []
+        page_hints = ("trasparenza", "classe-a", "classe a", "equivalenti", "aggiornat", "2026", "2025")
+
+        for idx_url in index_pages:
+            try:
+                page_html = fetch_text(idx_url)
+                anchors = extract_anchors(page_html, idx_url)
+                file_candidates.extend(find_data_files(anchors))
+                for u, t in anchors:
+                    tl, ul = t.lower(), u.lower()
+                    if "aifa.gov.it" in ul and u not in index_pages and u not in subpage_candidates:
+                        if any(w in tl or w in ul for w in page_hints):
+                            if not any(ext in ul for ext in (".pdf", ".xls", ".xlsx", ".doc")):
+                                subpage_candidates.append(u)
+            except Exception:
+                continue
+
+        for sub_url in subpage_candidates[:3]:
+            try:
+                sub_html = fetch_text(sub_url)
+                for f_url in find_data_files(extract_anchors(sub_html, sub_url)):
+                    if f_url not in file_candidates:
+                        file_candidates.append(f_url)
+            except Exception:
+                continue
+
+        priority = ("trasparenza", "equivalenti", "classe-a", "classe_a")
+        file_candidates.sort(key=lambda u: (0 if any(w in u.lower() for w in priority) else 1))
+
+        updated_prices = {}
+        used_files = []
+        for f_url in file_candidates[:5]:
+            try:
+                for fname, csv_text in extract_csv_texts_from_url(f_url):
+                    rows, _ = parse_aifa_csv(csv_text)
+                    added = 0
+                    for r in rows:
+                        aic = extract_aic(r)
+                        if not aic:
+                            continue
+                        prezzo = None
+                        prezzo_rif = None
+                        for k, v in r.items():
+                            if "PREZZO" in k and ("RIFERIMENTO" in k or "RIMBORSO" in k or "MASSIMO" in k):
+                                if prezzo_rif is None:
+                                    prezzo_rif = parse_price(v)
+                            elif "PREZZO" in k and prezzo is None:
+                                prezzo = parse_price(v)
+                        if prezzo is not None:
+                            existing = updated_prices.get(aic)
+                            if prezzo_rif is None and existing:
+                                prezzo_rif = existing.get("pr")
+                            if prezzo_rif is not None and prezzo_rif > prezzo:
+                                prezzo_rif = None
+                            updated_prices[aic] = {"p": prezzo, "pr": prezzo_rif, "cl": "A"}
+                            added += 1
+                    if added > 20:
+                        used_files.append(f"{fname[:30]}({added})")
+            except Exception:
+                continue
+
+        if updated_prices:
+            delta["price_updates"] = sanitize_prices(updated_prices)
+            delta["source_status"]["aifa_prezzi"] = f"OK ({len(delta['price_updates'])} prezzi: {', '.join(used_files[:3])})"
+        else:
+            delta["source_status"]["aifa_prezzi"] = f"CACHE ({len(delta['price_updates'])} prezzi mantenuti; file:{len(file_candidates)})"
+    except Exception as e:
+        delta["source_status"]["aifa_prezzi"] = f"CACHE ({len(delta['price_updates'])} prezzi; err:{str(e)[:50]})"
+
+    # 2. CARENZE AIFA (pulite da \n, spazi doppi e MINSAN duplicati)
+    try:
+        c_html = fetch_text("https://www.aifa.gov.it/farmaci-carenti")
+        c_files = find_data_files(extract_anchors(c_html, "https://www.aifa.gov.it/farmaci-carenti"))
+        c_files.sort(key=lambda u: (0 if "carenti" in u.lower() else 1))
+        shortages_map = {}
+        used_file = ""
+        last_header = ""
+        for f_url in c_files[:4]:
+            try:
+                for fname, csv_text in extract_csv_texts_from_url(f_url):
+                    rows, hdr = parse_aifa_csv(csv_text)
+                    last_header = hdr
+                    for r in rows:
+                        aic = extract_aic(r)
+                        if not aic:
+                            continue
+                        nome = ""
+                        motivo = ""
+                        for k, v in r.items():
+                            if not nome and any(w in k for w in ("MEDICINALE", "DENOMINAZIONE", "FARMACO", "CONFEZIONE")):
+                                nome = v
+                            elif not motivo and any(w in k for w in ("MOTIV", "STATO", "NOTE", "CAUSA", "TIPOLOGIA")):
+                                motivo = v
+                        nome_clean = clean_text(nome)[:90]
+                        stato_clean = clean_text(motivo or "Carente AIFA")[:220]
+                        prev = shortages_map.get(aic)
+                        if prev is None or len(stato_clean) > len(prev["stato"]):
+                            shortages_map[aic] = {
+                                "minsan": aic,
+                                "nome": nome_clean,
+                                "stato": stato_clean
+                            }
+                    if shortages_map:
+                        used_file = fname[:40]
+                        break
+            except Exception:
+                continue
+            if shortages_map:
+                break
+
+        if shortages_map:
+            shortages = list(shortages_map.values())
+            delta["shortages"] = shortages[:5000]
+            delta["source_status"]["aifa_carenze"] = f"OK ({len(shortages)} carenze uniche da {used_file})"
+        else:
+            delta["source_status"]["aifa_carenze"] = f"NO_ROWS (hdr: {last_header[:55]})"
+    except Exception as e:
+        delta["source_status"]["aifa_carenze"] = f"CACHE ({len(delta['shortages'])} carenze; err:{str(e)[:50]})"
+
+    # 3. AVVISI RITIRI E DIVIETI DI UTILIZZO AIFA (solo avvisi clinici recenti)
+    try:
+        notices, source_label = fetch_aifa_recalls()
+        if notices:
+            delta["revocations_notices"] = notices
+            delta["source_status"]["aifa_ritiri"] = f"OK ({len(notices)} avvisi da {source_label})"
+        else:
+            delta["source_status"]["aifa_ritiri"] = f"CACHE ({len(delta['revocations_notices'])} avvisi)"
+    except Exception as e:
+        delta["source_status"]["aifa_ritiri"] = f"CACHE ({len(delta['revocations_notices'])}; err:{str(e)[:50]})"
+
+    config["last_updated"] = now_iso
+    config["delta_updates_url"] = (
+        "https://raw.githubusercontent.com/herasymcuk/farmadiario-config/"
+        "refs/heads/main/delta_updates.json"
+    )
+
+    with open(REMOTE_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+    with open(DELTA_UPDATES_PATH, "w", encoding="utf-8") as f:
+        json.dump(delta, f, ensure_ascii=False, separators=(",", ":"))
+
+
+if __name__ == "__main__":
+    sync()
