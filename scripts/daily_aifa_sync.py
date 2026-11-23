@@ -3,29 +3,59 @@ import io
 import json
 import os
 import re
-import urllib.request
+import subprocess
 from datetime import datetime, timezone
 
 REMOTE_CONFIG_PATH = "remote_config.json"
 DELTA_UPDATES_PATH = "delta_updates.json"
 
-# Fonti pubbliche ufficiali AIFA (Open Data)
-AIFA_SOURCES = {
-    "trasparenza_a": "https://www.aifa.gov.it/documents/20142/1967301/Lista_trasparenza_AIFA.csv",
-    "carenze": "https://www.aifa.gov.it/documents/20142/1804926/elenco_medicinali_carenti.csv",
-    "ritiri_rss": "https://www.aifa.gov.it/web/guest/ritiri-e-divieti-di-utilizzo/-/asset_publisher/rss"
+# Endpoint ufficiali pubblici (Open Data AIFA Drive + Ministero della Salute)
+SOURCES = {
+    "aifa_classe_a": [
+        "https://drive.aifa.gov.it/farmaci/a.csv",
+        "https://www.aifa.gov.it/documents/20142/1967301/Lista_trasparenza_AIFA.csv"
+    ],
+    "aifa_carenze": [
+        "https://www.aifa.gov.it/documents/20142/1804926/elenco_medicinali_carenti.csv",
+        "https://drive.aifa.gov.it/farmaci/carenze.csv"
+    ],
+    "salute_veterinari": [
+        "https://www.dati.salute.gov.it/imgs/C_17_dataset_177_0_upFile.csv"
+    ]
 }
 
-def fetch_text(url, timeout=25):
-    req = urllib.request.Request(url, headers={"User-Agent": "FarmaDiario-SyncBot/4.1"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read()
-        for enc in ("utf-8-sig", "latin-1", "cp1252"):
-            try:
-                return raw.decode(enc)
-            except UnicodeDecodeError:
-                continue
-        return raw.decode("utf-8", errors="ignore")
+def fetch_via_curl(url, timeout=20):
+    cmd = [
+        "curl", "-sS", "-L", "--fail",
+        "--max-time", str(timeout),
+        "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "-H", "Accept: text/csv,text/plain,application/xml,*/*;q=0.8",
+        "-H", "Accept-Language: it-IT,it;q=0.9",
+        url
+    ]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="ignore").strip()
+        raise RuntimeError(f"curl_{proc.returncode}: {err[:60]}")
+    raw = proc.stdout
+    for enc in ("utf-8-sig", "latin-1", "cp1252"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="ignore")
+
+def fetch_first_working(url_list):
+    errors = []
+    for url in url_list:
+        try:
+            text = fetch_via_curl(url)
+            if len(text) > 500 and "<html" not in text[:300].lower():
+                return text, url
+            errors.append("HTML_OR_EMPTY")
+        except Exception as e:
+            errors.append(str(e))
+    raise RuntimeError(" | ".join(errors))
 
 def load_json(path, default):
     if os.path.exists(path):
@@ -63,57 +93,65 @@ def sync():
         "revocations_notices": []
     })
 
-    # 1. Aggiornamento Prezzi Ufficiali & Quota Riferimento AIFA (Classe A)
+    # 1. Prezzi Ufficiali Classe A (AIFA Drive)
     try:
-        csv_text = fetch_text(AIFA_SOURCES["trasparenza_a"])
-        reader = csv.DictReader(io.StringIO(csv_text), delimiter=";")
+        csv_text, used_url = fetch_first_working(SOURCES["aifa_classe_a"])
+        delim = ";" if ";" in csv_text[:500] else ","
+        reader = csv.DictReader(io.StringIO(csv_text), delimiter=delim)
         updated_prices = {}
         for row in reader:
-            row_u = { (k or "").strip().upper(): (v or "").strip() for k, v in row.items() }
-            aic = re.sub(r"\D", "", row_u.get("CODICE AIC", "") or row_u.get("AIC", ""))
+            row_u = {(k or "").strip().upper(): (v or "").strip() for k, v in row.items()}
+            aic = ""
+            for key in ("CODICE AIC", "AIC", "MINSAN", "CODICE_AIC"):
+                if key in row_u and row_u[key]:
+                    aic = re.sub(r"\D", "", row_u[key]).zfill(9)
+                    break
             if len(aic) == 9:
-                prezzo = parse_price(row_u.get("PREZZO AL PUBBLICO", "") or row_u.get("PREZZO", ""))
+                prezzo = None
+                for key in ("PREZZO AL PUBBLICO", "PREZZO", "PREZZO_PUBBLICO"):
+                    if key in row_u:
+                        prezzo = parse_price(row_u[key])
+                        if prezzo is not None:
+                            break
                 prezzo_rif = parse_price(row_u.get("PREZZO DI RIFERIMENTO", ""))
                 if prezzo is not None:
-                    updated_prices[aic] = {
-                        "p": prezzo,
-                        "pr": prezzo_rif,
-                        "cl": "A"
-                    }
+                    updated_prices[aic] = {"p": prezzo, "pr": prezzo_rif, "cl": "A"}
         if updated_prices:
             delta["price_updates"] = updated_prices
-            delta["source_status"]["aifa_prezzi"] = f"OK ({len(updated_prices)} record)"
+            delta["source_status"]["aifa_prezzi"] = f"OK ({len(updated_prices)} record da {used_url.split('/')[2]})"
+        else:
+            delta["source_status"]["aifa_prezzi"] = "PARSED_0_ROWS"
     except Exception as e:
-        delta["source_status"]["aifa_prezzi"] = f"CACHE ({type(e).__name__})"
+        delta["source_status"]["aifa_prezzi"] = f"ERR ({str(e)[:80]})"
 
-    # 2. Aggiornamento Carenze / Revoche / Sospensioni temporanee AIFA
+    # 2. Carenze AIFA
     try:
-        csv_text = fetch_text(AIFA_SOURCES["carenze"])
-        reader = csv.DictReader(io.StringIO(csv_text), delimiter=";")
+        csv_text, used_url = fetch_first_working(SOURCES["aifa_carenze"])
+        delim = ";" if ";" in csv_text[:500] else ","
+        reader = csv.DictReader(io.StringIO(csv_text), delimiter=delim)
         shortages = []
         for row in reader:
-            row_u = { (k or "").strip().upper(): (v or "").strip() for k, v in row.items() }
-            aic = re.sub(r"\D", "", row_u.get("AIC", "") or row_u.get("CODICE AIC", ""))
+            row_u = {(k or "").strip().upper(): (v or "").strip() for k, v in row.items()}
+            aic = re.sub(r"\D", "", row_u.get("AIC", "") or row_u.get("CODICE AIC", "")).zfill(9)
             nome = row_u.get("MEDICINALE", "") or row_u.get("DENOMINAZIONE", "")
-            motivo = row_u.get("MOTIVAZIONE", "") or row_u.get("STATO", "Carente / Sospeso")
-            if len(aic) == 9:
+            motivo = row_u.get("MOTIVAZIONE", "") or row_u.get("STATO", "Carente")
+            if len(aic) == 9 and aic != "000000000":
                 shortages.append({"minsan": aic, "nome": nome[:80], "stato": motivo[:100]})
         if shortages:
             delta["shortages"] = shortages[:3000]
             delta["source_status"]["aifa_carenze"] = f"OK ({len(shortages)} record)"
+        else:
+            delta["source_status"]["aifa_carenze"] = "PARSED_0_ROWS"
     except Exception as e:
-        delta["source_status"]["aifa_carenze"] = f"CACHE ({type(e).__name__})"
+        delta["source_status"]["aifa_carenze"] = f"ERR ({str(e)[:80]})"
 
-    # 3. Controllo RSS Ritiri e Divieti di Utilizzo AIFA
+    # 3. Test Connettività Ministero Salute (Veterinari)
     try:
-        rss_text = fetch_text(AIFA_SOURCES["ritiri_rss"])
-        titles = re.findall(r"<title><!\[CDATA\[(.*?)\]\]></title>|<title>(.*?)</title>", rss_text)
-        notices = [t[0] or t[1] for t in titles if "ritir" in (t[0] or t[1]).lower() or "diviet" in (t[0] or t[1]).lower() or "revoc" in (t[0] or t[1]).lower()]
-        if notices:
-            delta["revocations_notices"] = notices[:50]
-            delta["source_status"]["aifa_ritiri"] = f"OK ({len(notices)} avvisi)"
+        csv_text, used_url = fetch_first_working(SOURCES["salute_veterinari"])
+        lines = len(csv_text.splitlines())
+        delta["source_status"]["salute_vet"] = f"OK ({lines} righe)"
     except Exception as e:
-        delta["source_status"]["aifa_ritiri"] = f"CACHE ({type(e).__name__})"
+        delta["source_status"]["salute_vet"] = f"ERR ({str(e)[:80]})"
 
     config["last_updated"] = now_iso
     config["delta_updates_url"] = "https://raw.githubusercontent.com/herasymcuk/farmadiario-config/refs/heads/main/delta_updates.json"
