@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import zipfile
 from datetime import datetime, timezone
 from urllib.parse import urljoin
@@ -12,9 +13,12 @@ from urllib.parse import urljoin
 REMOTE_CONFIG_PATH = "remote_config.json"
 DELTA_UPDATES_PATH = "delta_updates.json"
 
-def fetch_bytes(url, timeout=30):
+def fetch_bytes(url, timeout=40):
+    time.sleep(1.5)  # Pausa educata per non attivare il rate-limit AIFA
     cmd = [
         "curl", "-sS", "-L", "--fail",
+        "--retry", "2", "--retry-delay", "4",
+        "--connect-timeout", "15",
         "--max-time", str(timeout),
         "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "-H", "Accept: text/html,text/csv,application/zip,text/plain,*/*;q=0.8",
@@ -35,7 +39,7 @@ def decode_text(raw):
             continue
     return raw.decode("utf-8", errors="ignore")
 
-def fetch_text(url, timeout=30):
+def fetch_text(url, timeout=40):
     return decode_text(fetch_bytes(url, timeout=timeout))
 
 def extract_anchors(page_html, base_url):
@@ -66,7 +70,7 @@ def find_data_files(anchors):
     return files
 
 def extract_csv_texts_from_url(url):
-    raw = fetch_bytes(url, timeout=35)
+    raw = fetch_bytes(url, timeout=45)
     if len(raw) < 200:
         return []
     if raw[:2] == b"PK":
@@ -82,13 +86,12 @@ def extract_csv_texts_from_url(url):
     return [(url.split("/")[-1].split("?")[0], text)]
 
 def norm_header(h):
-    """Normalizza intestazioni rimuovendo punti e spazi doppi (es. A.I.C. -> AIC)."""
     return re.sub(r"\s+", " ", (h or "").replace(".", "").strip().upper())
 
 def parse_aifa_csv(csv_text):
     lines = [ln for ln in csv_text.splitlines() if ln.strip()]
     if not lines:
-        return []
+        return [], ""
 
     header_idx = 0
     best_delim = ";"
@@ -101,6 +104,7 @@ def parse_aifa_csv(csv_text):
             best_delim = ";" if sc >= cm else ","
             break
 
+    header_preview = lines[header_idx][:90]
     body = "\n".join(lines[header_idx:])
     reader = csv.DictReader(io.StringIO(body), delimiter=best_delim)
     rows = []
@@ -111,16 +115,14 @@ def parse_aifa_csv(csv_text):
                 clean_row[norm_header(k)] = (v or "").strip()
         if clean_row:
             rows.append(clean_row)
-    return rows
+    return rows, header_preview
 
 def parse_price(val):
     if not val:
         return None
-    # Accetta solo valori chiaramente monetari (es. 5,63 o 1.234,56)
     v = val.replace("€", "").strip()
     if re.search(r"[a-zA-Z]", v):
         return None
-    # Se formato italiano con punto migliaia e virgola decimali (es. 1.250,50)
     if "," in v and "." in v:
         v = v.replace(".", "").replace(",", ".")
     else:
@@ -131,6 +133,21 @@ def parse_price(val):
         return num if 0 < num < 9999999 else None
     except ValueError:
         return None
+
+def sanitize_prices(price_map):
+    """Garantisce che pr (prezzo di riferimento) sia sempre <= p (prezzo al pubblico)."""
+    cleaned = {}
+    for aic, item in price_map.items():
+        if not isinstance(item, dict):
+            continue
+        p = item.get("p")
+        pr = item.get("pr")
+        if p is None or p <= 0:
+            continue
+        if pr is not None and (pr <= 0 or pr > p):
+            pr = None
+        cleaned[aic] = {"p": p, "pr": pr, "cl": item.get("cl", "A")}
+    return cleaned
 
 def extract_aic(row):
     for k, v in row.items():
@@ -165,9 +182,10 @@ def sync():
         "schema_version": 1,
         "last_updated": now_iso,
         "source_status": {},
-        "price_updates": prev_delta.get("price_updates", {}),
-        "shortages": [],
-        "revocations_notices": []
+        # Ripulisce subito eventuali vecchi 'pr' anomali dalla cache esistente
+        "price_updates": sanitize_prices(prev_delta.get("price_updates", {})),
+        "shortages": prev_delta.get("shortages", []),
+        "revocations_notices": prev_delta.get("revocations_notices", [])
     }
 
     # 1. PREZZI UFFICIALI AIFA (Liste di Trasparenza + Classe A e H)
@@ -193,7 +211,7 @@ def sync():
             except Exception:
                 continue
 
-        for sub_url in subpage_candidates[:4]:
+        for sub_url in subpage_candidates[:3]:
             try:
                 sub_html = fetch_text(sub_url)
                 for f_url in find_data_files(extract_anchors(sub_html, sub_url)):
@@ -206,10 +224,10 @@ def sync():
 
         updated_prices = {}
         used_files = []
-        for f_url in file_candidates[:6]:
+        for f_url in file_candidates[:5]:
             try:
                 for fname, csv_text in extract_csv_texts_from_url(f_url):
-                    rows = parse_aifa_csv(csv_text)
+                    rows, _ = parse_aifa_csv(csv_text)
                     added = 0
                     for r in rows:
                         aic = extract_aic(r)
@@ -218,17 +236,17 @@ def sync():
                         prezzo = None
                         prezzo_rif = None
                         for k, v in r.items():
-                            # Richiede esplicitamente "PREZZO" per non confondere "Confezione di riferimento"
                             if "PREZZO" in k and ("RIFERIMENTO" in k or "RIMBORSO" in k or "MASSIMO" in k):
                                 if prezzo_rif is None:
                                     prezzo_rif = parse_price(v)
                             elif "PREZZO" in k and prezzo is None:
                                 prezzo = parse_price(v)
                         if prezzo is not None:
-                            # Mantieni prezzo_rif se già estratto dalla Lista Equivalenti
                             existing = updated_prices.get(aic)
                             if prezzo_rif is None and existing:
                                 prezzo_rif = existing.get("pr")
+                            if prezzo_rif is not None and prezzo_rif > prezzo:
+                                prezzo_rif = None
                             updated_prices[aic] = {"p": prezzo, "pr": prezzo_rif, "cl": "A"}
                             added += 1
                     if added > 20:
@@ -237,24 +255,26 @@ def sync():
                 continue
 
         if updated_prices:
-            delta["price_updates"] = updated_prices
-            delta["source_status"]["aifa_prezzi"] = f"OK ({len(updated_prices)} prezzi: {', '.join(used_files[:3])})"
+            delta["price_updates"] = sanitize_prices(updated_prices)
+            delta["source_status"]["aifa_prezzi"] = f"OK ({len(delta['price_updates'])} prezzi: {', '.join(used_files[:3])})"
         else:
-            delta["source_status"]["aifa_prezzi"] = f"NO_PRICES (file:{len(file_candidates)})"
+            delta["source_status"]["aifa_prezzi"] = f"CACHE ({len(delta['price_updates'])} prezzi mantenuti; file:{len(file_candidates)})"
     except Exception as e:
-        delta["source_status"]["aifa_prezzi"] = f"ERR ({str(e)[:80]})"
+        delta["source_status"]["aifa_prezzi"] = f"CACHE ({len(delta['price_updates'])} prezzi; err:{str(e)[:50]})"
 
-    # 2. CARENZE AIFA (Fix A.I.C. con puntini + priorità elenco_medicinali_carenti)
+    # 2. CARENZE AIFA
     try:
         c_html = fetch_text("https://www.aifa.gov.it/farmaci-carenti")
         c_files = find_data_files(extract_anchors(c_html, "https://www.aifa.gov.it/farmaci-carenti"))
         c_files.sort(key=lambda u: (0 if "carenti" in u.lower() else 1))
         shortages = []
         used_file = ""
-        for f_url in c_files[:9]:
+        last_header = ""
+        for f_url in c_files[:4]:
             try:
                 for fname, csv_text in extract_csv_texts_from_url(f_url):
-                    rows = parse_aifa_csv(csv_text)
+                    rows, hdr = parse_aifa_csv(csv_text)
+                    last_header = hdr
                     for r in rows:
                         aic = extract_aic(r)
                         if not aic:
@@ -283,17 +303,16 @@ def sync():
             delta["shortages"] = shortages[:5000]
             delta["source_status"]["aifa_carenze"] = f"OK ({len(shortages)} carenze da {used_file})"
         else:
-            delta["source_status"]["aifa_carenze"] = f"NO_ROWS (file:{len(c_files)})"
+            delta["source_status"]["aifa_carenze"] = f"NO_ROWS (hdr: {last_header[:55]})"
     except Exception as e:
-        delta["source_status"]["aifa_carenze"] = f"ERR ({str(e)[:80]})"
+        delta["source_status"]["aifa_carenze"] = f"CACHE ({len(delta['shortages'])} carenze; err:{str(e)[:50]})"
 
-    # 3. AVVISI RITIRI E DIVIETI DI UTILIZZO AIFA (Titoli H2/H3/H4 + Link)
+    # 3. AVVISI RITIRI E DIVIETI DI UTILIZZO AIFA
     try:
         notices = []
         for page_url in (
             "https://www.aifa.gov.it/ritiri-e-divieti-di-utilizzo",
-            "https://www.aifa.gov.it/qualita-dei-medicinali",
-            "https://www.aifa.gov.it/comunicazioni"
+            "https://www.aifa.gov.it/qualita-dei-medicinali"
         ):
             try:
                 p_html = fetch_text(page_url)
@@ -315,9 +334,9 @@ def sync():
             delta["revocations_notices"] = notices[:50]
             delta["source_status"]["aifa_ritiri"] = f"OK ({len(notices)} avvisi ufficiali)"
         else:
-            delta["source_status"]["aifa_ritiri"] = "NO_NOTICES"
+            delta["source_status"]["aifa_ritiri"] = f"CACHE ({len(delta['revocations_notices'])} avvisi)"
     except Exception as e:
-        delta["source_status"]["aifa_ritiri"] = f"ERR ({str(e)[:80]})"
+        delta["source_status"]["aifa_ritiri"] = f"CACHE ({len(delta['revocations_notices'])}; err:{str(e)[:50]})"
 
     config["last_updated"] = now_iso
     config["delta_updates_url"] = "https://raw.githubusercontent.com/herasymcuk/farmadiario-config/refs/heads/main/delta_updates.json"
