@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "last_updated": "2026-11-24T17:30:20.659Z",
+  "revoked_aics": [
+    {
+      "aic": "041505013",
+      "name": "LATAFIX*collirio 2,5 ml 50 mcg/ml + 5 mg/ml",
+      "company": "DOC GENERICI Srl",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "041505025",
+      "name": "LATAFIX*collirio 3 flaconi 2,5 ml 50 mcg/ml + 5 mg/ml",
+      "company": "DOC GENERICI Srl",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "041505037",
+      "name": "LATAFIX*collirio 6 flaconi 2,5 ml 50 mcg/ml + 5 mg/ml",
+      "company": "DOC GENERICI Srl",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "030161020",
+      "name": "GENTAMICINA SOLFATO ITALFARMACO*1 fiala IM EV 80 mg 2 ml",
+      "company": "ITALFARMACO SpA",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "030659015",
+      "name": "CHININA CLORIDRATO SALF*10 fiale EV 2 ml 500 mg/2 ml",
+      "company": "SALF SpA",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "048126015",
+      "name": "ERLOTINIB TILLOMED*30 cpr riv 25 mg",
+      "company": "TILLOMED ITALIA Srl",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "048126027",
+      "name": "ERLOTINIB TILLOMED*30 cpr riv 100 mg",
+      "company": "TILLOMED ITALIA Srl",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "048126039",
+      "name": "ERLOTINIB TILLOMED*30 cpr riv 150 mg",
+      "company": "TILLOMED ITALIA Srl",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "043707025",
+      "name": "ZIRTEC*20 cpr riv 10 mg",
+      "company": "GENERAL PHARMA SOLUTIONS SpA",
+      "type": "REVOCA_AIP",
+      "grace_days": 0,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "044845016",
+      "name": "YAZ*24 cpr riv 3 mg + 0,02 mg + 4 cpr riv placebo Paese di provenienza: Olanda",
+      "company": "GLOBAL PHARMACIES P. HEALTH Srl",
+      "type": "REVOCA_AIP",
+      "grace_days": 0,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "043713015",
+      "name": "LANSOX*14 cps rigide 30 mg",
+      "company": "PRICETAG SpA",
+      "type": "REVOCA_AIP",
+      "grace_days": 0,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "aic": "043713027",
+      "name": "LANSOX*14 cps rigide 15 mg",
+      "company": "PRICETAG SpA",
+      "type": "REVOCA_AIP",
+      "grace_days": 0,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    }
+  ],
+  "revoked_prefixes6": [
+    {
+      "prefix6": "051019",
+      "name": "BOSUTINIB EG*",
+      "company": "EG SpA",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "prefix6": "037946",
+      "name": "TUSSELIM FLUIDIFICANTE TOSSE*",
+      "company": "FARMITALIA Srl – SOC. UNIPERS.",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    },
+    {
+      "prefix6": "044363",
+      "name": "ILMOTASK*",
+      "company": "FARMITALIA Srl – SOC. UNIPERS.",
+      "type": "REVOCA_AIC",
+      "grace_days": 180,
+      "date": "2026-11-24",
+      "circular": "157/2026"
+    }
+  ],
+  "recalled_lots": [],
+  "new_aics": [],
+  "notices": []
+}
