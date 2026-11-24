@@ -14,7 +14,7 @@ from urllib.parse import unquote, urljoin
 
 REMOTE_CONFIG_PATH = "remote_config.json"
 DELTA_UPDATES_PATH = "delta_updates.json"
-
+FEDERFARMA_ALERTS_PATH = "federfarma_alerts.json"
 RECALL_URL_HINTS = (
     "ritir", "diviet", "difett", "sospens", "sequestr", "falsificat"
 )
@@ -391,6 +391,46 @@ def sync():
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     config = load_json(REMOTE_CONFIG_PATH, {
         "config_version": 1,
+        # 4. INTEGRAZIONE AUTOMATICA PROVVEDIMENTI AIFA DA PEC FEDERFARMA
+    ff = load_json(FEDERFARMA_ALERTS_PATH, {})
+    ff_revoked_aics = ff.get("revoked_aics", [])
+    ff_prefixes6 = ff.get("revoked_prefixes6", [])
+    ff_lots = ff.get("recalled_lots", [])
+    ff_new_aics = ff.get("new_aics", [])
+    ff_notices = ff.get("notices", [])
+
+    delta["revoked_aics"] = [x.get("aic") for x in ff_revoked_aics if x.get("aic")]
+    delta["revoked_prefixes6"] = ff_prefixes6
+    delta["recalled_lots"] = ff_lots
+    delta["new_aics"] = ff_new_aics
+    config["recalled_lots"] = ff_lots
+
+    # Rende subito effettive le revoche AIC/AIP come FUORI_COMMERCIO anche sulle build attuali
+    if ff_revoked_aics:
+        existing_shortages = {s["minsan"]: s for s in delta.get("shortages", []) if s.get("minsan")}
+        for item in ff_revoked_aics:
+            aic = item.get("aic", "")
+            if aic:
+                tipo = item.get("type", "REVOCA_AIC")
+                nota = f"Cessata commercializzazione definitiva ({tipo} AIFA - {item.get('date', '')})"
+                existing_shortages[aic] = {
+                    "minsan": aic,
+                    "nome": clean_text(item.get("name", ""))[:90],
+                    "stato": nota[:220]
+                }
+        delta["shortages"] = list(existing_shortages.values())[:5500]
+
+    if ff_notices:
+        merged_notices = list(ff_notices)
+        for n in delta.get("revocations_notices", []):
+            if n not in merged_notices:
+                merged_notices.append(n)
+        delta["revocations_notices"] = merged_notices[:50]
+
+    delta["source_status"]["federfarma_pec"] = (
+        f"OK ({len(ff_revoked_aics)} AIC revocati, {len(ff_prefixes6)} famiglie 6-cifre, "
+        f"{len(ff_lots)} lotti, {len(ff_new_aics)} nuovi)"
+    )
         "last_updated": now_iso,
         "recalled_lots": [],
         "critical_interactions": [],
