@@ -2,7 +2,7 @@
   "search_proxy_url": "https://farmadiario-proxy.herasymcuk.workers.dev",
   "search_proxy_token": "fd_viterbo_2026_x9k2",
   "config_version": 1,
-  "last_updated": "2026-11-25T05:56:53Z",
+  "last_updated": "2026-11-25T09:30:51Z",
   "app_update": {
     "latest_version_code": 50,
     "latest_version_name": "4.0.0",
@@ -10,7 +10,18 @@
     "changelog": "Nuove terapie a scalare e al bisogno, QR Code terapia, Health Connect, tessera ICE e APK ottimizzato.",
     "download_url": ""
   },
-  "recalled_lots": [],
+  "recalled_lots": [
+    {
+      "aic": "029811039",
+      "name": "PARACETAMOLO SELLA 500 mg 30 compresse",
+      "company": "Laboratorio Chimico Farmaceutico A. Sella Srl",
+      "lot": "086215",
+      "expiry": "08/2031",
+      "reason": "Difetto nel confezionamento primario",
+      "date": "2026-11-25",
+      "circular": "985/2026"
+    }
+  ],
   "critical_interactions": [
     {
       "ingredient_a": "ACIDO ACETILSALICILICO",
