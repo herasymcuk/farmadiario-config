@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "last_updated": "2026-11-24T17:30:20.659Z",
+  "last_updated": "2026-11-25T09:30:42.604Z",
   "revoked_aics": [
     {
       "aic": "041505013",
@@ -140,7 +140,20 @@
       "circular": "157/2026"
     }
   ],
-  "recalled_lots": [],
+  "recalled_lots": [
+    {
+      "aic": "029811039",
+      "name": "PARACETAMOLO SELLA 500 mg 30 compresse",
+      "company": "Laboratorio Chimico Farmaceutico A. Sella Srl",
+      "lot": "086215",
+      "expiry": "08/2031",
+      "reason": "Difetto nel confezionamento primario",
+      "date": "2026-11-25",
+      "circular": "985/2026"
+    }
+  ],
   "new_aics": [],
-  "notices": []
+  "notices": [
+    "[2026-11-25] Ritiro a scopo cautelativo del lotto n. 086215 scad. 08/2031 del medicinale PARACETAMOLO SELLA 500 mg 30 compresse (AIC 029811039) a seguito di comunicazione della ditta "
+  ]
 }
