@@ -1,4 +1,6 @@
 {
+  "search_proxy_url": "https://farmadiario-proxy.herasymcuk.workers.dev",
+  "search_proxy_token": "fd_viterbo_2026_x9k2",
   "config_version": 1,
   "last_updated": "2026-11-25T05:56:53Z",
   "app_update": {
